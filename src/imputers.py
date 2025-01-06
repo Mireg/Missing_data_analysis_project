@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.ensemble import RandomForestRegressor
 import xgboost as xgb

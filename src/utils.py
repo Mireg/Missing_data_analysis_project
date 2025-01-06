@@ -20,6 +20,9 @@ def prepare_data(df, target_column=None):
     
     return X, y, numeric_features, categorical_features
 
+df = pd.read_csv('/home/mireg/Repos/Missing_data_analysis_project/data/pzn-rent-test.csv')
+print(prepare_data(df, target_column='price'))
+
 def load_data(train_path, test_path):
     """Load and check datasets"""
     train_df = pd.read_csv(train_path)
@@ -45,9 +48,10 @@ def save_results(results, output_dir='predictions'):
     # Save individual predictions and create comparison summary
     summary_data = []
     for approach_name, result in results.items():
-        # Save predictions
+        # Save predictions with ID column
         predictions_df = pd.DataFrame({
-            'price': result['predictions']
+            'ID': range(1, len(result['predictions']) + 1),
+            'TARGET': result['predictions']
         })
         predictions_df.to_csv(f'{output_dir}/{approach_name}_predictions.csv', index=False)
         

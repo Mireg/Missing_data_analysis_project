@@ -1,14 +1,19 @@
+import pandas as pd
 from src.imputers import ImputationMethods
 from src.models import get_models
 from src.pipeline import ModelPipeline
 from src.utils import prepare_data, load_data, save_results
 
 def main():
-    try:
         # Load data
-        train_df, test_df = load_data("train_dataset.csv", "test_dataset.csv")
-        
+        train_df, test_df = load_data("data/pzn-rent-train.csv", "data/pzn-rent-test.csv")
+
         # Prepare data
+        train_df.drop(columns = ['ad_title', 'date_activ', 'date_modif', 'date_expire'], inplace=True)
+        test_df.drop(columns = ['ad_title', 'date_activ', 'date_modif', 'date_expire'], inplace=True)
+        train_df = pd.get_dummies(train_df, columns=['quarter'], drop_first=True)
+        test_df = pd.get_dummies(test_df, columns=['quarter'], drop_first=True)
+        
         X_train, y_train, numeric_features, categorical_features = prepare_data(train_df, 'price')
         X_test, _, _, _ = prepare_data(test_df)
         
@@ -22,9 +27,6 @@ def main():
         
         # Save results
         save_results(results)
-        
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
