@@ -5,6 +5,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
 import numpy as np
+from pathlib import Path
+from datetime import datetime
 
 def prepare_data(df, target_column=None):
     """Prepare data and identify column types"""
@@ -16,12 +18,11 @@ def prepare_data(df, target_column=None):
         y = None
         
     numeric_features = X.select_dtypes(include=['int64', 'float64']).columns
-    categorical_features = X.select_dtypes(include=['object', 'category']).columns
+    # Remove encoded categorical columns from numeric features
+    numeric_features = [col for col in numeric_features if not col.startswith('quarter_')]
     
+    categorical_features = []
     return X, y, numeric_features, categorical_features
-
-df = pd.read_csv('/home/mireg/Repos/Missing_data_analysis_project/data/pzn-rent-test.csv')
-print(prepare_data(df, target_column='price'))
 
 def load_data(train_path, test_path):
     """Load and check datasets"""
@@ -42,26 +43,33 @@ def load_data(train_path, test_path):
     return train_df, test_df
 
 def save_results(results, output_dir='predictions'):
-    """Save predictions and comparison results"""
+    """Save test predictions and comparison results"""
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save individual predictions and create comparison summary
+    # Save individual test predictions and create comparison summary
     summary_data = []
     for approach_name, result in results.items():
-        # Save predictions with ID column
-        predictions_df = pd.DataFrame({
-            'ID': range(1, len(result['predictions']) + 1),
-            'TARGET': result['predictions']
+        # Save test predictions with ID column
+        test_predictions_df = pd.DataFrame({
+            'ID': range(1, len(result['test_predictions']) + 1),
+            'TARGET': result['test_predictions']
         })
-        predictions_df.to_csv(f'{output_dir}/{approach_name}_predictions.csv', index=False)
+        test_predictions_df.to_csv(f'{output_dir}/{approach_name}_test_predictions.csv', index=False)
         
         # Add to summary
         summary_data.append({
             'approach': approach_name,
             'cv_rmse_mean': result['cv_rmse_mean'],
-            'cv_rmse_std': result['cv_rmse_std'],
-            'training_time': result['training_time']
+            'cv_rmse_std': result['cv_rmse_std']
         })
+    
+    # Save and display summary
+    summary_df = pd.DataFrame(summary_data)
+    summary_df = summary_df.sort_values('cv_rmse_mean')
+    summary_df.to_csv(f'{output_dir}/approach_comparison.csv', index=False)
+    
+    print("\nApproach Comparison:")
+    print(summary_df.to_string(index=False))
     
     # Save and display summary
     summary_df = pd.DataFrame(summary_data)

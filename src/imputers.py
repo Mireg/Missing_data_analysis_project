@@ -6,17 +6,61 @@ from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 import xgboost as xgb
 from lightgbm import LGBMRegressor
 
+class DummyImputer:
+    def fit_transform(self, X):
+        return X
+        
+    def transform(self, X):
+        return X
+
 class ImputationMethods:
     def __init__(self, random_state=42):
         self.random_state = random_state
         
     def get_imputers(self):
         return {
+            'no_imputation': {
+                'numeric': DummyImputer(),
+                'categorical': DummyImputer()
+            },
+            'simple_most_frequent': self._create_simple_most_frequent_imputer(),
+            'simple_mean': self._create_simple_mean_imputer(),
+            'simple_median': self._create_simple_median_imputer(),
             'advanced_iterative': self._create_advanced_iterative_imputer(),
             'knn': self._create_knn_imputer(),
             'ensemble': self._create_ensemble_imputer(),
             'lightgbm': self._create_lightgbm_imputer(),
             'hybrid': self._create_hybrid_imputer()
+        }
+
+    def _create_simple_most_frequent_imputer(self):
+        return {
+            'numeric': SimpleImputer(
+                strategy='most_frequent'
+            ),
+            'categorical': SimpleImputer(
+                strategy='most_frequent'
+            )
+        }
+
+    def _create_simple_mean_imputer(self):
+        return {
+            'numeric': SimpleImputer(
+                strategy='mean'
+            ),
+            'categorical': SimpleImputer(
+                strategy='most_frequent'  # still use most_frequent for categorical
+            )
+        }
+
+    def _create_simple_median_imputer(self):
+        return {
+            'numeric': SimpleImputer(
+                strategy='median'
+            ),
+            'categorical': SimpleImputer(
+                strategy='most_frequent'  # still use most_frequent for categorical
+            )
         }
     
     def _create_advanced_iterative_imputer(self):
@@ -35,7 +79,7 @@ class ImputationMethods:
             ),
             'categorical': SimpleImputer(
                 strategy='most_frequent',
-                add_indicator=True
+                add_indicator=False
             )
         }
     
@@ -47,7 +91,7 @@ class ImputationMethods:
             ),
             'categorical': SimpleImputer(
                 strategy='most_frequent',
-                add_indicator=True
+                add_indicator=False
             )
         }
     
@@ -67,7 +111,7 @@ class ImputationMethods:
             ),
             'categorical': SimpleImputer(
                 strategy='most_frequent',
-                add_indicator=True
+                add_indicator=False
             )
         }
     
@@ -86,7 +130,7 @@ class ImputationMethods:
             ),
             'categorical': SimpleImputer(
                 strategy='most_frequent',
-                add_indicator=True
+                add_indicator=False
             )
         }
     
@@ -96,7 +140,7 @@ class ImputationMethods:
             'numeric': self._create_hybrid_numeric_imputer(),
             'categorical': SimpleImputer(
                 strategy='most_frequent',
-                add_indicator=True
+                add_indicator=False
             )
         }
     

@@ -5,6 +5,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import mean_squared_error
 import time
+from sklearn.model_selection import RandomizedSearchCV
+from src.optimization import tune_xgboost, tune_lightgbm
 
 class ModelPipeline:
     def __init__(self, imputation_methods, prediction_models, random_state=42):
@@ -15,9 +17,16 @@ class ModelPipeline:
         
     def impute_data(self, X, numeric_features, categorical_features, imputer_dict, fit_imputer=True):
         """Impute data using specified imputers"""
-        X_numeric = X[numeric_features].copy()
-        X_categorical = X[categorical_features].copy()
+        # Get encoded categorical columns (quarter_*)
+        encoded_cols = [col for col in X.columns if col.startswith('quarter_')]
         
+        # Handle numeric features
+        X_numeric = X[numeric_features].copy() if len(numeric_features) > 0 else pd.DataFrame()
+        
+        # Handle any remaining categorical features (not encoded yet)
+        X_categorical = X[categorical_features].copy() if len(categorical_features) > 0 else pd.DataFrame()
+        
+        # Impute numeric features
         if len(numeric_features) > 0:
             if fit_imputer:
                 X_numeric = pd.DataFrame(
@@ -31,7 +40,8 @@ class ModelPipeline:
                     columns=numeric_features,
                     index=X.index
                 )
-                
+                    
+        # Impute categorical features (if any not yet encoded)
         if len(categorical_features) > 0:
             if fit_imputer:
                 X_categorical = pd.DataFrame(
@@ -45,75 +55,70 @@ class ModelPipeline:
                     columns=categorical_features,
                     index=X.index
                 )
-                
-        return pd.concat([X_numeric, X_categorical], axis=1)
-    
-    def run_pipeline(self, X_train, y_train, X_test, numeric_features, categorical_features):
-        """Run the complete pipeline with all approaches and enhanced cross-validation"""
-        print("\nStarting processing with multiple approaches...")
         
-        # Define KFold cross-validator
-        kf = KFold(n_splits=5, shuffle=True, random_state=self.random_state)
+        # Add already encoded categorical columns (quarter_*) without imputation
+        if encoded_cols:
+            X_encoded = X[encoded_cols].copy()
+            # Combine all parts: numeric features, categorical features, and encoded features
+            return pd.concat([X_numeric, X_categorical, X_encoded], axis=1)
+        else:
+            # Return just numeric and categorical if no encoded columns
+            return pd.concat([X_numeric, X_categorical], axis=1)
+        
+    def run_pipeline(self, X_train, y_train, X_test, numeric_features, categorical_features):
+        print("\nStarting processing...")
+        results = {}
         
         for imp_name, imputer in self.imputation_methods.items():
             print(f"\nProcessing with {imp_name} imputation...")
-            start_time = time.time()
             
-            # Impute data
+            # Impute training and test data
             X_train_imputed = self.impute_data(X_train, numeric_features, categorical_features, imputer, True)
             X_test_imputed = self.impute_data(X_test, numeric_features, categorical_features, imputer, False)
             
+            print("Tuning XGBoost...")
+            xgb_model, xgb_params = tune_xgboost(X_train_imputed, y_train)
+            print("Best XGBoost params:", xgb_params)
+            
+            # print("Tuning LightGBM...")
+            # lgb_model, lgb_params = tune_lightgbm(X_train_imputed, y_train)
+            # print("Best LightGBM params:", lgb_params)
+            
+            # Update models with tuned versions
+            self.prediction_models.update({
+                'xgboost_tuned': xgb_model
+                #,'lightgbm_tuned': lgb_model
+            })
+
             for model_name, model in self.prediction_models.items():
-                print(f"Training {model_name}...")
-                model_start_time = time.time()
+                key = f"{imp_name}_{model_name}"
+                print(f"Training {key}...")
                 
-                # Initialize lists to store fold results
-                fold_scores = []
-                fold_predictions = []
+                # Create pipeline
+                pipeline = Pipeline([
+                    ('scaler', StandardScaler()),
+                    ('model', model)
+                ])
                 
-                # Perform k-fold cross-validation
-                for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X_train_imputed)):
-                    # Split data for this fold
-                    X_fold_train = X_train_imputed.iloc[train_idx]
-                    y_fold_train = y_train.iloc[train_idx]
-                    X_fold_val = X_train_imputed.iloc[val_idx]
-                    y_fold_val = y_train.iloc[val_idx]
-                    
-                    # Create and train pipeline
-                    pipeline = Pipeline([
-                        ('scaler', StandardScaler()),
-                        ('model', model)
-                    ])
-                    
-                    # Train on this fold
-                    pipeline.fit(X_fold_train, y_fold_train)
-                    
-                    # Predict on validation fold
-                    fold_pred = pipeline.predict(X_fold_val)
-                    fold_rmse = np.sqrt(mean_squared_error(y_fold_val, fold_pred))
-                    fold_scores.append(fold_rmse)
-                    
-                    # Store predictions
-                    fold_predictions.append(pipeline.predict(X_test_imputed))
-                    
-                    print(f"Fold {fold_idx + 1} RMSE: {fold_rmse:.2f}")
+                # Do KFold CV first
+                cv_scores = cross_val_score(pipeline, X_train_imputed, y_train, 
+                                        cv=5, scoring='neg_root_mean_squared_error')
                 
-                # Calculate average predictions across folds
-                final_predictions = np.mean(fold_predictions, axis=0)
+                # After CV, fit on full training data
+                pipeline.fit(X_train_imputed, y_train)
                 
-                # Store results
-                approach_name = f"{imp_name}_{model_name}"
-                self.results[approach_name] = {
-                    'cv_rmse_mean': np.mean(fold_scores),
-                    'cv_rmse_std': np.std(fold_scores),
-                    'predictions': final_predictions,
-                    'pipeline': pipeline,  # Store the last pipeline
-                    'training_time': time.time() - model_start_time,
-                    'fold_scores': fold_scores  # Store individual fold scores
+                # Make predictions on test set
+                test_predictions = pipeline.predict(X_test_imputed)
+                
+                # Store both CV results and test predictions
+                results[key] = {
+                    'cv_scores': -cv_scores,  # Convert back to positive RMSE
+                    'cv_rmse_mean': -cv_scores.mean(),
+                    'cv_rmse_std': cv_scores.std(),
+                    'test_predictions': test_predictions,
+                    'model': pipeline
                 }
                 
-                print(f"Finished {model_name} - CV RMSE: {np.mean(fold_scores):.2f} (±{np.std(fold_scores):.2f})")
-            
-            print(f"Total time for {imp_name}: {time.time() - start_time:.2f} seconds")
-            
-        return self.results
+                print(f"Completed {key} - CV RMSE: {-cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})")
+        
+        return results
