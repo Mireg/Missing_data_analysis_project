@@ -7,6 +7,7 @@ from src.utils import prepare_data, load_data, save_results
 def main():
         # Load data
         train_df, test_df = load_data("data/pzn-rent-train.csv", "data/pzn-rent-test.csv")
+        train_df, test_df = load_data("data/pzn-rent-train-cleaned_v1.csv", "data/pzn-rent-test-cleaned_v1.csv")
 
         # Prepare data
         train_df.drop(columns = ['ad_title', 'date_activ', 'date_modif', 'date_expire'], inplace=True)
